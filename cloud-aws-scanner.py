@@ -5,11 +5,12 @@ import argparse
 import google.generativeai as genai
 
 class CloudAWSCloudScanner:
-    def __init__(self, profile=None, regions=None):
+    def __init__(self, profile=None, regions=None, remediate=False):
         self.session = boto3.Session(profile_name=profile)
         ec2_client = self.session.client('ec2')
         self.regions = regions or [r['RegionName'] for r in ec2_client.describe_regions()['Regions']]
         self.findings = []
+        self.remediate = remediate # Store it as a class variable
         
     def log(self, severity, title, resource, details="", region="global", remediation=""):
         risk_score = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}[severity]
@@ -27,6 +28,7 @@ class CloudAWSCloudScanner:
 
     # ==================== Scan Functions ====================
 
+    
     def scan_s3(self):
         print("🔍 Scanning S3 buckets...")
         s3 = self.session.client('s3')
@@ -34,20 +36,55 @@ class CloudAWSCloudScanner:
             buckets = s3.list_buckets()['Buckets']
             for b in buckets:
                 name = b['Name']
+                
+                # Check 1: Public Access Block
+                needs_pab_fix = False
                 try:
                     pab = s3.get_public_access_block(Bucket=name)
                     pab_conf = pab['PublicAccessBlockConfiguration']
                     if not all([pab_conf.get(k, False) for k in ['BlockPublicAcls', 'IgnorePublicAcls', 'BlockPublicPolicy', 'RestrictPublicBuckets']]):
-                        self.log("MEDIUM", "S3 Public Access Block not fully enabled", name,
-                                 remediation="Go to S3 Console → Bucket → Permissions → Block public access → Turn ON all four options.")
-                except:
-                    pass
+                        needs_pab_fix = True
+                except s3.exceptions.ClientError as e:
+                    if e.response['Error']['Code'] == 'NoSuchPublicAccessBlockConfiguration':
+                        needs_pab_fix = True
+                    else:
+                        pass
+                
+                if needs_pab_fix:
+                    self.log("MEDIUM", "S3 Public Access Block not fully enabled", name,
+                             remediation="Turn ON all four Block Public Access options.")
+                    
+                    # --- REMEDIATION LOGIC ---
+                    if self.remediate:
+                        print(f"\n  ⚠️  VULNERABILITY FOUND: S3 Bucket '{name}' is missing Public Access Blocks.")
+                        choice = input(f"  🛠️  Do you want to automatically apply Block Public Access to '{name}'? (y/N): ")
+                        if choice.lower() == 'y':
+                            try:
+                                s3.put_public_access_block(
+                                    Bucket=name,
+                                    PublicAccessBlockConfiguration={
+                                        'BlockPublicAcls': True,
+                                        'IgnorePublicAcls': True,
+                                        'BlockPublicPolicy': True,
+                                        'RestrictPublicBuckets': True
+                                    }
+                                )
+                                print(f"  ✅ SUCCESS: Block Public Access enabled for '{name}'.")
+                                # Update the log to show it was fixed
+                                self.findings[-1]['title'] += " (REMEDIATED)"
+                                self.findings[-1]['severity'] = "LOW" 
+                            except Exception as fix_error:
+                                print(f"  ❌ FAILED to remediate: {fix_error}")
+                        else:
+                            print("  ⏭️ Skipped remediation.")
+
+                # Check 2: Bucket ACLs (Keep your existing ACL check code here)
                 try:
                     acl = s3.get_bucket_acl(Bucket=name)
                     for grant in acl.get('Grants', []):
                         if grant.get('Grantee', {}).get('URI') == 'http://acs.amazonaws.com/groups/global/AllUsers':
                             self.log("HIGH", "Publicly accessible S3 bucket (ACL)", name,
-                                     remediation="S3 Console → Bucket → Permissions → ACL → Remove 'Everyone'/'AllUsers'. Enable Block Public Access.")
+                                     remediation="Remove 'Everyone'/'AllUsers' from ACL.")
                 except:
                     pass
         except Exception as e:
@@ -518,8 +555,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cloud Simple AWS Cloud Security Scanner")
     parser.add_argument("--profile", help="AWS CLI profile name", default=None)
     parser.add_argument("--regions", help="Comma-separated list of regions (default: all)", default=None)
+    # NEW ARGUMENT:
+    parser.add_argument("--remediate", help="Enable interactive automated remediation", action="store_true")
     args = parser.parse_args()
     
     regions = args.regions.split(",") if args.regions else None
-    scanner = CloudAWSCloudScanner(profile=args.profile, regions=regions)
+    scanner = CloudAWSCloudScanner(profile=args.profile, regions=regions, remediate=args.remediate)
     scanner.run_full_scan()
