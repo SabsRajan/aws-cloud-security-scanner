@@ -1,0 +1,35 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ScannerReadOnlyAccess",
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListAllMyBuckets",
+                "s3:GetBucketPublicAccessBlock",
+                "s3:GetBucketAcl",
+                "ec2:DescribeRegions",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeInstances",
+                "ec2:DescribeInstanceAttribute",
+                "ec2:DescribeSnapshots",
+                "iam:ListUsers",
+                "iam:ListAttachedUserPolicies",
+                "iam:ListAccessKeys",
+                "lambda:ListFunctions",
+                "lambda:GetPolicy",
+                "rds:DescribeDBInstances",
+                "kms:ListKeys",
+                "kms:GetKeyRotationStatus",
+                "cloudtrail:DescribeTrails"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "AllowReadGeminiKey",
+            "Effect": "Allow",
+            "Action": "secretsmanager:GetSecretValue",
+            "Resource": "arn:aws:secretsmanager:YOUR_REGION:YOUR_ACCOUNT_ID:secret:grok-scanner/api-keys-XXXXXX"
+        }
+    ]
+}

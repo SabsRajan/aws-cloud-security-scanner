@@ -1,0 +1,22 @@
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Python environments & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+
+# Environment Variables (Just in case you ever use one)
+.env
+
+# 🚨 CRITICAL: DO NOT PUSH SCAN REPORTS TO GITHUB 🚨
+aws-security-report.html
+aws-security-report.json
